@@ -1,9 +1,8 @@
 #!/bin/bash
 
-# Script para executar o projeto CNPJ ETL
-# Este script configura o ambiente e executa o processo ETL
+# Script único para executar o projeto CNPJ ETL
+# Verifica se o download já foi feito, se não, faz o download primeiro
 
-# set -e removido para permitir tratamento manual de erros
 set +e  # Não parar automaticamente em erros
 
 # Cores para output
@@ -12,7 +11,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Função para imprimir mensagens
 print_info() {
     echo -e "${GREEN}[INFO]${NC} $1"
 }
@@ -25,54 +23,48 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Verificar se Python está instalado
-print_info "Verificando Python..."
-if ! command -v python3 &> /dev/null; then
-    print_error "Python3 não encontrado! Por favor, instale Python 3.8 ou superior."
-    exit 1
-fi
-
-PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
-print_info "Python encontrado: $(python3 --version)"
-
-# Verificar se pip está disponível (via pip3 ou python3 -m pip)
-if command -v pip3 &> /dev/null; then
-    PIP_CMD="pip3"
-elif python3 -m pip --version &> /dev/null; then
-    PIP_CMD="python3 -m pip"
-else
-    print_error "pip não encontrado! Tentando instalar pip..."
-    # Tentar instalar pip usando ensurepip
-    if python3 -m ensurepip --upgrade &> /dev/null; then
-        PIP_CMD="python3 -m pip"
-        print_info "pip instalado com sucesso!"
-    else
-        print_error "Não foi possível instalar pip automaticamente."
-        print_error "Por favor, instale pip manualmente: apt-get install python3-pip"
-        exit 1
-    fi
-fi
-print_info "Usando: $PIP_CMD"
-
 # Obter diretório do script
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
-# Verificar se requirements.txt existe
-if [ ! -f "requirements.txt" ]; then
-    print_error "Arquivo requirements.txt não encontrado!"
+# Verificar Python
+print_info "Verificando Python..."
+if ! command -v python3 &> /dev/null; then
+    print_error "Python3 não encontrado!"
     exit 1
 fi
+print_info "Python encontrado: $(python3 --version)"
 
-# Verificar se src/main.py existe
-if [ ! -f "src/main.py" ]; then
-    print_error "Arquivo src/main.py não encontrado!"
-    exit 1
+# Verificar/criar arquivo .env
+ENV_FILE=".env"
+if [ ! -f "$ENV_FILE" ]; then
+    print_warn "Arquivo .env não encontrado. Criando com valores padrão..."
+    cat > "$ENV_FILE" << EOF
+# Configurações do Banco de Dados PostgreSQL
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_NAME=cnpj_data
+
+# Caminhos dos arquivos
+OUTPUT_FILES_PATH=src/data/downloads
+EXTRACTED_FILES_PATH=src/data/extracted
+EOF
 fi
 
-# Criar/verificar ambiente virtual (opcional)
+# Carregar variáveis do .env
+source "$ENV_FILE" 2>/dev/null || true
+OUTPUT_FILES_PATH=${OUTPUT_FILES_PATH:-src/data/downloads}
+EXTRACTED_FILES_PATH=${EXTRACTED_FILES_PATH:-src/data/extracted}
+
+# Criar diretórios necessários
+mkdir -p "$OUTPUT_FILES_PATH"
+mkdir -p "$EXTRACTED_FILES_PATH"
+
+# Configurar ambiente virtual
 USE_VENV=${USE_VENV:-true}
-VENV_CREATED=false
+VENV_DIR="venv"
 
 if [ "$USE_VENV" = "true" ]; then
     # Verificar se o módulo venv está disponível
@@ -80,129 +72,94 @@ if [ "$USE_VENV" = "true" ]; then
         print_warn "Módulo venv não disponível. Continuando sem ambiente virtual..."
         USE_VENV="false"
     else
-        # Verificar se o venv existe mas está incompleto
-        if [ -d "venv" ] && [ ! -f "venv/bin/activate" ]; then
-            print_warn "Ambiente virtual incompleto detectado. Removendo e recriando..."
-            rm -rf venv
+        # Verificar se venv existe mas está incompleto
+        if [ -d "$VENV_DIR" ] && [ ! -f "$VENV_DIR/bin/activate" ]; then
+            print_warn "Ambiente virtual incompleto. Removendo..."
+            rm -rf "$VENV_DIR"
         fi
         
         # Criar venv se não existe
-        if [ ! -d "venv" ]; then
+        if [ ! -d "$VENV_DIR" ]; then
             print_info "Criando ambiente virtual..."
-            if python3 -m venv venv 2>&1; then
-                VENV_CREATED=true
-            else
+            if ! python3 -m venv "$VENV_DIR" 2>&1; then
                 print_error "Falha ao criar ambiente virtual!"
-                print_warn "Continuando sem ambiente virtual..."
                 USE_VENV="false"
             fi
         fi
         
-        # Verificar novamente se o activate existe (após criação)
-        if [ "$USE_VENV" = "true" ] && [ ! -f "venv/bin/activate" ]; then
-            print_error "Ambiente virtual criado mas arquivo activate não encontrado!"
-            print_warn "Removendo e tentando novamente..."
-            rm -rf venv
-            if python3 -m venv venv 2>&1; then
-                VENV_CREATED=true
-            else
-                print_error "Falha ao recriar ambiente virtual!"
-                print_warn "Continuando sem ambiente virtual..."
-                USE_VENV="false"
-            fi
-        fi
-        
-        # Ativar o venv se tudo estiver OK
-        if [ "$USE_VENV" = "true" ] && [ -f "venv/bin/activate" ]; then
+        # Ativar venv se disponível
+        if [ "$USE_VENV" = "true" ] && [ -f "$VENV_DIR/bin/activate" ]; then
             print_info "Ativando ambiente virtual..."
-            source venv/bin/activate || {
-                print_error "Falha ao ativar ambiente virtual!"
-                USE_VENV="false"
-            }
-            
-            if [ "$USE_VENV" = "true" ]; then
-                # Atualizar PIP_CMD para usar o pip do venv
-                if command -v pip &> /dev/null; then
-                    PIP_CMD="pip"
-                elif [ -f "venv/bin/pip" ]; then
-                    PIP_CMD="venv/bin/pip"
-                else
-                    PIP_CMD="python3 -m pip"
-                fi
-                print_info "Usando pip do ambiente virtual"
-            fi
+            source "$VENV_DIR/bin/activate" || USE_VENV="false"
         fi
     fi
 fi
 
-# Instalar/atualizar dependências
-print_info "Instalando dependências do requirements.txt..."
+# Configurar comando pip
+if [ "$USE_VENV" = "true" ] && [ -f "$VENV_DIR/bin/pip" ]; then
+    PIP_CMD="$VENV_DIR/bin/pip"
+    PYTHON_CMD="$VENV_DIR/bin/python"
+elif [ "$USE_VENV" = "true" ] && [ -f "$VENV_DIR/bin/pip3" ]; then
+    PIP_CMD="$VENV_DIR/bin/pip3"
+    PYTHON_CMD="$VENV_DIR/bin/python3"
+elif command -v pip3 &> /dev/null; then
+    PIP_CMD="pip3"
+    PYTHON_CMD="python3"
+elif python3 -m pip --version &> /dev/null; then
+    PIP_CMD="python3 -m pip"
+    PYTHON_CMD="python3"
+else
+    print_error "pip não encontrado!"
+    exit 1
+fi
+
+# Instalar dependências
+print_info "Instalando/atualizando dependências..."
 $PIP_CMD install --quiet --upgrade pip
 $PIP_CMD install --quiet -r requirements.txt
 
-# Verificar/criar arquivo .env
-ENV_FILE=".env"
-if [ ! -f "$ENV_FILE" ]; then
-    print_warn "Arquivo .env não encontrado. Criando template..."
-    
-    # Valores padrão
-    DB_HOST=${DB_HOST:-localhost}
-    DB_PORT=${DB_PORT:-5432}
-    DB_USER=${DB_USER:-postgres}
-    DB_PASSWORD=${DB_PASSWORD:-postgres}
-    DB_NAME=${DB_NAME:-cnpj_data}
-    OUTPUT_FILES_PATH=${OUTPUT_FILES_PATH:-src/data/downloads}
-    EXTRACTED_FILES_PATH=${EXTRACTED_FILES_PATH:-src/data/extracted}
-    
-    cat > "$ENV_FILE" << EOF
-# Configurações do Banco de Dados PostgreSQL
-DB_HOST=$DB_HOST
-DB_PORT=$DB_PORT
-DB_USER=$DB_USER
-DB_PASSWORD=$DB_PASSWORD
-DB_NAME=$DB_NAME
-
-# Caminhos dos arquivos
-OUTPUT_FILES_PATH=$OUTPUT_FILES_PATH
-EXTRACTED_FILES_PATH=$EXTRACTED_FILES_PATH
-EOF
-    
-    print_info "Arquivo .env criado com valores padrão."
-    print_warn "Por favor, edite o arquivo .env com suas configurações antes de continuar."
-    print_info "Pressione Enter para continuar ou Ctrl+C para cancelar..."
-    read
-else
-    print_info "Arquivo .env encontrado."
+if [ $? -ne 0 ]; then
+    print_error "Falha ao instalar dependências!"
+    exit 1
 fi
 
-# Criar diretórios se não existirem
-print_info "Criando diretórios necessários..."
-mkdir -p src/data/downloads
-mkdir -p src/data/extracted
+# Verificar se já existe arquivos ZIP baixados
+ZIP_COUNT=$(find "$OUTPUT_FILES_PATH" -name "*.zip" 2>/dev/null | wc -l)
 
-# Verificar conexão com banco de dados (opcional)
-print_info "Verificando conexão com PostgreSQL..."
-if command -v psql &> /dev/null; then
-    # Tentar ler variáveis do .env
-    source "$ENV_FILE" 2>/dev/null || true
+if [ "$ZIP_COUNT" -eq 0 ]; then
+    print_warn "Nenhum arquivo ZIP encontrado em $OUTPUT_FILES_PATH"
+    print_info "Iniciando download dos arquivos..."
+    echo ""
     
-    if psql -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-postgres}" -d "${DB_NAME:-cnpj_data}" -c "SELECT 1;" &> /dev/null; then
-        print_info "Conexão com PostgreSQL OK!"
-    else
-        print_warn "Não foi possível conectar ao PostgreSQL. Verifique suas configurações no .env"
-        print_warn "Certifique-se de que o PostgreSQL está rodando e o banco de dados existe."
+    $PYTHON_CMD src/download.py
+    
+    DOWNLOAD_EXIT=$?
+    if [ $DOWNLOAD_EXIT -ne 0 ]; then
+        print_error "Download falhou!"
+        exit $DOWNLOAD_EXIT
     fi
+    
+    # Verificar novamente após download
+    ZIP_COUNT=$(find "$OUTPUT_FILES_PATH" -name "*.zip" 2>/dev/null | wc -l)
+    if [ "$ZIP_COUNT" -eq 0 ]; then
+        print_error "Nenhum arquivo foi baixado!"
+        exit 1
+    fi
+    
+    print_info "Download concluído! $ZIP_COUNT arquivo(s) encontrado(s)."
+    echo ""
 else
-    print_warn "psql não encontrado. Pulando verificação de conexão."
+    print_info "Arquivos ZIP já encontrados: $ZIP_COUNT arquivo(s) em $OUTPUT_FILES_PATH"
+    print_info "Pulando download. Executando processamento ETL..."
+    echo ""
 fi
 
-# Executar o script principal
+# Executar processo ETL
 print_info "Iniciando processo ETL..."
-print_info "Executando: python3 src/main.py"
+print_info "Executando: $PYTHON_CMD src/main.py"
 echo ""
 
-cd "$SCRIPT_DIR"
-python3 src/main.py
+$PYTHON_CMD src/main.py
 
 EXIT_CODE=$?
 
@@ -212,4 +169,3 @@ else
     print_error "Processo ETL falhou com código de saída: $EXIT_CODE"
     exit $EXIT_CODE
 fi
-
