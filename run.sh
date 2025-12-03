@@ -34,11 +34,24 @@ fi
 PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
 print_info "Python encontrado: $(python3 --version)"
 
-# Verificar se pip está instalado
-if ! command -v pip3 &> /dev/null; then
-    print_error "pip3 não encontrado! Por favor, instale pip."
-    exit 1
+# Verificar se pip está disponível (via pip3 ou python3 -m pip)
+if command -v pip3 &> /dev/null; then
+    PIP_CMD="pip3"
+elif python3 -m pip --version &> /dev/null; then
+    PIP_CMD="python3 -m pip"
+else
+    print_error "pip não encontrado! Tentando instalar pip..."
+    # Tentar instalar pip usando ensurepip
+    if python3 -m ensurepip --upgrade &> /dev/null; then
+        PIP_CMD="python3 -m pip"
+        print_info "pip instalado com sucesso!"
+    else
+        print_error "Não foi possível instalar pip automaticamente."
+        print_error "Por favor, instale pip manualmente: apt-get install python3-pip"
+        exit 1
+    fi
 fi
+print_info "Usando: $PIP_CMD"
 
 # Obter diretório do script
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -70,8 +83,8 @@ fi
 
 # Instalar/atualizar dependências
 print_info "Instalando dependências do requirements.txt..."
-pip3 install --quiet --upgrade pip
-pip3 install --quiet -r requirements.txt
+$PIP_CMD install --quiet --upgrade pip
+$PIP_CMD install --quiet -r requirements.txt
 
 # Verificar/criar arquivo .env
 ENV_FILE=".env"
