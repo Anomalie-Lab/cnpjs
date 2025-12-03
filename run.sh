@@ -3,7 +3,8 @@
 # Script para executar o projeto CNPJ ETL
 # Este script configura o ambiente e executa o processo ETL
 
-set -e  # Para na primeira erro
+# set -e removido para permitir tratamento manual de erros
+set +e  # Não parar automaticamente em erros
 
 # Cores para output
 RED='\033[0;31m'
@@ -71,14 +72,67 @@ fi
 
 # Criar/verificar ambiente virtual (opcional)
 USE_VENV=${USE_VENV:-true}
+VENV_CREATED=false
+
 if [ "$USE_VENV" = "true" ]; then
-    if [ ! -d "venv" ]; then
-        print_info "Criando ambiente virtual..."
-        python3 -m venv venv
+    # Verificar se o módulo venv está disponível
+    if ! python3 -m venv --help &> /dev/null; then
+        print_warn "Módulo venv não disponível. Continuando sem ambiente virtual..."
+        USE_VENV="false"
+    else
+        # Verificar se o venv existe mas está incompleto
+        if [ -d "venv" ] && [ ! -f "venv/bin/activate" ]; then
+            print_warn "Ambiente virtual incompleto detectado. Removendo e recriando..."
+            rm -rf venv
+        fi
+        
+        # Criar venv se não existe
+        if [ ! -d "venv" ]; then
+            print_info "Criando ambiente virtual..."
+            if python3 -m venv venv 2>&1; then
+                VENV_CREATED=true
+            else
+                print_error "Falha ao criar ambiente virtual!"
+                print_warn "Continuando sem ambiente virtual..."
+                USE_VENV="false"
+            fi
+        fi
+        
+        # Verificar novamente se o activate existe (após criação)
+        if [ "$USE_VENV" = "true" ] && [ ! -f "venv/bin/activate" ]; then
+            print_error "Ambiente virtual criado mas arquivo activate não encontrado!"
+            print_warn "Removendo e tentando novamente..."
+            rm -rf venv
+            if python3 -m venv venv 2>&1; then
+                VENV_CREATED=true
+            else
+                print_error "Falha ao recriar ambiente virtual!"
+                print_warn "Continuando sem ambiente virtual..."
+                USE_VENV="false"
+            fi
+        fi
+        
+        # Ativar o venv se tudo estiver OK
+        if [ "$USE_VENV" = "true" ] && [ -f "venv/bin/activate" ]; then
+            print_info "Ativando ambiente virtual..."
+            source venv/bin/activate || {
+                print_error "Falha ao ativar ambiente virtual!"
+                USE_VENV="false"
+            }
+            
+            if [ "$USE_VENV" = "true" ]; then
+                # Atualizar PIP_CMD para usar o pip do venv
+                if command -v pip &> /dev/null; then
+                    PIP_CMD="pip"
+                elif [ -f "venv/bin/pip" ]; then
+                    PIP_CMD="venv/bin/pip"
+                else
+                    PIP_CMD="python3 -m pip"
+                fi
+                print_info "Usando pip do ambiente virtual"
+            fi
+        fi
     fi
-    
-    print_info "Ativando ambiente virtual..."
-    source venv/bin/activate
 fi
 
 # Instalar/atualizar dependências
