@@ -252,7 +252,7 @@ try:
     print('✓ Conexão estabelecida com sucesso!')
 except Exception as e:
     print(f'✗ Erro ao conectar ao banco de dados: {e}')
-    print('Verifique se o Docker está rodando: docker compose up -d')
+    print('Verifique se o PostgreSQL está rodando e as configurações no arquivo .env')
     sys.exit(1)
 
 #%%
