@@ -17,9 +17,13 @@ CREATE TABLE IF NOT EXISTS companies (
     company_name VARCHAR(255),
     legal_nature_code INTEGER,
     responsible_qualification_code INTEGER,
+    responsible_cpf VARCHAR(11),
     capital NUMERIC(20, 2),
     company_size_code INTEGER,
     responsible_federative_entity VARCHAR(255),
+    registration_status INTEGER,
+    registration_status_date DATE,
+    activity_start_date DATE,
     PRIMARY KEY (base_cnpj)
 );
 
@@ -28,9 +32,13 @@ COMMENT ON COLUMN companies.base_cnpj IS 'Base CNPJ (first 8 digits)';
 COMMENT ON COLUMN companies.company_name IS 'Company legal name';
 COMMENT ON COLUMN companies.legal_nature_code IS 'Legal nature code';
 COMMENT ON COLUMN companies.responsible_qualification_code IS 'Responsible person qualification code';
+COMMENT ON COLUMN companies.responsible_cpf IS 'CPF of the responsible person (extracted from company_name field)';
 COMMENT ON COLUMN companies.capital IS 'Company capital';
 COMMENT ON COLUMN companies.company_size_code IS 'Company size code';
 COMMENT ON COLUMN companies.responsible_federative_entity IS 'Responsible federative entity';
+COMMENT ON COLUMN companies.registration_status IS 'Registration status (2=Ativa, 3=Suspensa, 4=Inapta, 8=Baixada)';
+COMMENT ON COLUMN companies.registration_status_date IS 'Date of registration status';
+COMMENT ON COLUMN companies.activity_start_date IS 'Company opening date / start of activities date';
 
 -- Table: establishments (estabelecimentos)
 CREATE TABLE IF NOT EXISTS establishments (
