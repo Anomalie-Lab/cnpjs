@@ -35,41 +35,9 @@ if ! command -v python3 &> /dev/null; then
 fi
 print_info "Python encontrado: $(python3 --version)"
 
-# Verificar se arquivo .env existe (na raiz ou em src/) - NÃO SOBRESCREVER se já existir!
-ENV_FILE=".env"
-ENV_FILE_SRC="src/.env"
-
-if [ -f "$ENV_FILE" ]; then
-    print_info "Arquivo .env encontrado na raiz do projeto."
-elif [ -f "$ENV_FILE_SRC" ]; then
-    print_info "Arquivo .env encontrado em src/."
-    ENV_FILE="$ENV_FILE_SRC"
-else
-    print_warn "Arquivo .env não encontrado. Criando com valores padrão na raiz..."
-    cat > "$ENV_FILE" << EOF
-# Configurações do Banco de Dados PostgreSQL
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=postgres
-DB_NAME=cnpj_data
-
-# Caminhos dos arquivos
-OUTPUT_FILES_PATH=src/data/downloads
-EXTRACTED_FILES_PATH=src/data/extracted
-EOF
-    print_info "Arquivo .env criado com valores padrão."
-    print_warn "Por favor, edite o arquivo .env com suas configurações antes de continuar."
-fi
-
-# Carregar variáveis do .env
-source "$ENV_FILE" 2>/dev/null || true
-OUTPUT_FILES_PATH=${OUTPUT_FILES_PATH:-src/data/downloads}
-EXTRACTED_FILES_PATH=${EXTRACTED_FILES_PATH:-src/data/extracted}
-
-# Criar diretórios necessários
-mkdir -p "$OUTPUT_FILES_PATH"
-mkdir -p "$EXTRACTED_FILES_PATH"
+# Criar diretórios necessários (o Python vai criar se necessário)
+mkdir -p src/data/downloads
+mkdir -p src/data/extracted
 
 # Configurar ambiente virtual
 USE_VENV=${USE_VENV:-true}
@@ -133,10 +101,10 @@ if [ $? -ne 0 ]; then
 fi
 
 # Verificar se já existe arquivos ZIP baixados
-ZIP_COUNT=$(find "$OUTPUT_FILES_PATH" -name "*.zip" 2>/dev/null | wc -l)
+ZIP_COUNT=$(find src/data/downloads -name "*.zip" 2>/dev/null | wc -l)
 
 if [ "$ZIP_COUNT" -eq 0 ]; then
-    print_warn "Nenhum arquivo ZIP encontrado em $OUTPUT_FILES_PATH"
+    print_warn "Nenhum arquivo ZIP encontrado em src/data/downloads"
     print_info "Iniciando download dos arquivos..."
     echo ""
     
@@ -149,7 +117,7 @@ if [ "$ZIP_COUNT" -eq 0 ]; then
     fi
     
     # Verificar novamente após download
-    ZIP_COUNT=$(find "$OUTPUT_FILES_PATH" -name "*.zip" 2>/dev/null | wc -l)
+    ZIP_COUNT=$(find src/data/downloads -name "*.zip" 2>/dev/null | wc -l)
     if [ "$ZIP_COUNT" -eq 0 ]; then
         print_error "Nenhum arquivo foi baixado!"
         exit 1
@@ -158,7 +126,7 @@ if [ "$ZIP_COUNT" -eq 0 ]; then
     print_info "Download concluído! $ZIP_COUNT arquivo(s) encontrado(s)."
     echo ""
 else
-    print_info "Arquivos ZIP já encontrados: $ZIP_COUNT arquivo(s) em $OUTPUT_FILES_PATH"
+    print_info "Arquivos ZIP já encontrados: $ZIP_COUNT arquivo(s) em src/data/downloads"
     print_info "Pulando download. Executando processamento ETL..."
     echo ""
 fi
