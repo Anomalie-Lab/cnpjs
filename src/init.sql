@@ -1,7 +1,7 @@
 -- Database initialization script for Docker
--- The database "cnpj_data" is already created by docker-compose
+-- The database "anomalie_db" is already created by docker-compose
 -- This script sets up additional configurations if needed
 
-COMMENT ON DATABASE "cnpj_data"
+COMMENT ON DATABASE "anomalie_db"
     IS 'Database for storing Brazilian Federal Revenue public CNPJ data';
 

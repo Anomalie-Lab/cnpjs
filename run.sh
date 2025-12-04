@@ -35,10 +35,17 @@ if ! command -v python3 &> /dev/null; then
 fi
 print_info "Python encontrado: $(python3 --version)"
 
-# Verificar/criar arquivo .env
+# Verificar se arquivo .env existe (na raiz ou em src/) - NÃO SOBRESCREVER se já existir!
 ENV_FILE=".env"
-if [ ! -f "$ENV_FILE" ]; then
-    print_warn "Arquivo .env não encontrado. Criando com valores padrão..."
+ENV_FILE_SRC="src/.env"
+
+if [ -f "$ENV_FILE" ]; then
+    print_info "Arquivo .env encontrado na raiz do projeto."
+elif [ -f "$ENV_FILE_SRC" ]; then
+    print_info "Arquivo .env encontrado em src/."
+    ENV_FILE="$ENV_FILE_SRC"
+else
+    print_warn "Arquivo .env não encontrado. Criando com valores padrão na raiz..."
     cat > "$ENV_FILE" << EOF
 # Configurações do Banco de Dados PostgreSQL
 DB_HOST=localhost
@@ -51,6 +58,8 @@ DB_NAME=cnpj_data
 OUTPUT_FILES_PATH=src/data/downloads
 EXTRACTED_FILES_PATH=src/data/extracted
 EOF
+    print_info "Arquivo .env criado com valores padrão."
+    print_warn "Por favor, edite o arquivo .env com suas configurações antes de continuar."
 fi
 
 # Carregar variáveis do .env

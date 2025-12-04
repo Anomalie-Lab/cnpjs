@@ -1,15 +1,15 @@
--- Create database "cnpj_data" (Brazilian Federal Revenue CNPJ Public Data)
-CREATE DATABASE "cnpj_data"
+-- Create database "anomalie_db" (Anomalie Data)
+CREATE DATABASE "anomalie_db"
     WITH
     OWNER = postgres
     ENCODING = 'UTF8'
     CONNECTION LIMIT = -1;
 
-COMMENT ON DATABASE "cnpj_data"
-    IS 'Database for storing Brazilian Federal Revenue public CNPJ data';
+COMMENT ON DATABASE "anomalie_db"
+    IS 'Database for storing anomalie data';
 
 -- Connect to the database
-\c cnpj_data
+\c anomalie_db
 
 -- Table: companies (empresas)
 CREATE TABLE IF NOT EXISTS companies (
