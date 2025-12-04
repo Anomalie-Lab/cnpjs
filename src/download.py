@@ -26,10 +26,45 @@ url_dados_abertos = 'https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abe
 url_old_format = 'http://200.152.38.155/CNPJ/'
 
 # Get paths from environment or use defaults
-# Convert to absolute paths to avoid issues with current directory
-base_dir = os.path.dirname(os.path.abspath(__file__))
-pasta_zip = os.path.abspath(os.getenv('OUTPUT_FILES_PATH', os.path.join(base_dir, 'data', 'downloads')))
-pasta_cnpj = os.path.abspath(os.getenv('EXTRACTED_FILES_PATH', os.path.join(base_dir, 'data', 'extracted')))
+# Garantir que os caminhos padrão fiquem dentro do diretório src/
+base_dir = os.path.dirname(os.path.abspath(__file__))  # src/ (diretório onde está o script)
+project_root = os.path.dirname(base_dir)  # Diretório raiz do projeto
+
+# Obter caminhos do ambiente ou usar padrões dentro de src/
+output_path = os.getenv('OUTPUT_FILES_PATH')
+extracted_path = os.getenv('EXTRACTED_FILES_PATH')
+
+# Resolver caminho para pasta_zip (sempre dentro de src/)
+if not output_path:
+    # Padrão: src/data/downloads
+    pasta_zip = os.path.join(base_dir, 'data', 'downloads')
+elif os.path.isabs(output_path):
+    # Se for absoluto, usar como está
+    pasta_zip = output_path
+elif output_path.startswith('src/'):
+    # Se começa com src/, resolver a partir da raiz do projeto
+    pasta_zip = os.path.join(project_root, output_path)
+else:
+    # Caminho relativo, assumir que está dentro de src/
+    pasta_zip = os.path.join(base_dir, output_path)
+
+# Resolver caminho para pasta_cnpj (sempre dentro de src/)
+if not extracted_path:
+    # Padrão: src/data/extracted
+    pasta_cnpj = os.path.join(base_dir, 'data', 'extracted')
+elif os.path.isabs(extracted_path):
+    # Se for absoluto, usar como está
+    pasta_cnpj = extracted_path
+elif extracted_path.startswith('src/'):
+    # Se começa com src/, resolver a partir da raiz do projeto
+    pasta_cnpj = os.path.join(project_root, extracted_path)
+else:
+    # Caminho relativo, assumir que está dentro de src/
+    pasta_cnpj = os.path.join(base_dir, extracted_path)
+
+# Converter para caminhos absolutos
+pasta_zip = os.path.abspath(pasta_zip)
+pasta_cnpj = os.path.abspath(pasta_cnpj)
 
 
 def requisitos():
