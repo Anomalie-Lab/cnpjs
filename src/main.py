@@ -926,7 +926,10 @@ print('='*60)
 print('ATUALIZANDO TABELA COMPANIES COM DADOS DO ESTABELECIMENTO MATRIZ')
 print('='*60)
 print('Atualizando situação cadastral e data de abertura...')
+print('(Esta operação pode demorar alguns minutos dependendo do volume de dados)')
+sys.stdout.flush()
 try:
+    update_start = time.time()
     cur.execute('''
         UPDATE companies c
         SET 
@@ -940,10 +943,14 @@ try:
     ''')
     updated_rows = cur.rowcount
     conn.commit()
+    update_time = round(time.time() - update_start)
     print(f'✓ {updated_rows:,} empresas atualizadas com situação cadastral e data de abertura')
+    print(f'  Tempo de atualização: {update_time} segundos ({update_time//60} minutos)')
+    sys.stdout.flush()
 except Exception as e:
     print(f'⚠ Erro ao atualizar companies: {e}')
     conn.rollback()
+    sys.stdout.flush()
 
 #%%
 # Arquivos de socios:
@@ -963,63 +970,130 @@ if len(arquivos_nao_processados_soc) < len(arquivos_socios):
 else:
     safe_truncate_table('partners')
 
+print(f'Total de arquivos de sócios para processar: {len(arquivos_socios)}')
 processed_count_soc = 0
 skipped_count_soc = 0
-for e in range(0, len(arquivos_socios)):
-    filename = arquivos_socios[e]
-    
-    # Verificar se arquivo já foi processado
-    if is_file_processed(filename, 'partners'):
-        print(f'Arquivo já processado (pulando): {filename}')
-        skipped_count_soc += 1
-        continue
-    
-    print('Trabalhando no arquivo: '+filename+' [...]')
-    try:
-        del socios
-    except:
-        pass
+try:
+    for e in range(0, len(arquivos_socios)):
+        filename = arquivos_socios[e]
+        
+        # Verificar se arquivo já foi processado
+        if is_file_processed(filename, 'partners'):
+            print(f'[{e+1}/{len(arquivos_socios)}] Arquivo já processado (pulando): {filename}')
+            skipped_count_soc += 1
+            continue
+        
+        print(f'[{e+1}/{len(arquivos_socios)}] Processando arquivo: {filename}')
+        sys.stdout.flush()
+        try:
+            del socios
+            gc.collect()
+        except:
+            pass
 
-    socios_dtypes = {0: object, 1: 'Int32', 2: object, 3: object, 4: 'Int32', 5: 'Int32', 6: 'Int32',
-                     7: object, 8: object, 9: 'Int32', 10: 'Int32'}
-    extracted_file_path = os.path.join(extracted_files, arquivos_socios[e])
-    socios = pd.read_csv(filepath_or_buffer=extracted_file_path,
-                          sep=';',
-                          #nrows=100,
-                          skiprows=0,
-                          header=None,
-                          dtype=socios_dtypes,
-                          encoding='latin-1',
-    )
+        socios_dtypes = {0: object, 1: 'Int32', 2: object, 3: object, 4: 'Int32', 5: 'Int32', 6: 'Int32',
+                         7: object, 8: object, 9: 'Int32', 10: 'Int32'}
+        extracted_file_path = os.path.join(extracted_files, filename)
+        
+        file_size = os.path.getsize(extracted_file_path) if os.path.exists(extracted_file_path) else None
+        if file_size:
+            file_size_mb = file_size / (1024 * 1024)
+            print(f'  Tamanho do arquivo: {file_size_mb:.2f} MB')
+            sys.stdout.flush()
+        
+        NROWS_SOCIOS = 1000000  # Processar em chunks de 1 milhão de linhas
+        part_socios = 0
+        
+        while True:
+            if part_socios > 0:
+                print(f'  Lendo parte {part_socios + 1} do arquivo (pulando {NROWS_SOCIOS * part_socios:,} linhas)...')
+            else:
+                print(f'  Lendo primeira parte do arquivo...')
+            sys.stdout.flush()
+            
+            try:
+                socios = pd.read_csv(filepath_or_buffer=extracted_file_path,
+                                      sep=';',
+                                      nrows=NROWS_SOCIOS,
+                                      skiprows=NROWS_SOCIOS * part_socios,
+                                      header=None,
+                                      dtype=socios_dtypes,
+                                      encoding='latin-1',
+                                      on_bad_lines='warn'
+                )
+                print(f'  ✓ Arquivo lido: {len(socios):,} registros carregados')
+                sys.stdout.flush()
+            except KeyboardInterrupt:
+                print(f'\n\n⚠ Processo interrompido pelo usuário durante leitura do arquivo: {filename}')
+                print('O arquivo não foi marcado como processado e será reprocessado na próxima execução.')
+                print('Progresso salvo até agora:')
+                print(f'  - Arquivos processados: {processed_count_soc}')
+                print(f'  - Arquivos pulados: {skipped_count_soc}')
+                raise
+            except Exception as e:
+                print(f'  ⚠ Erro ao ler arquivo: {e}')
+                if part_socios > 0 and len(socios) == 0:
+                    print(f'  Fim do arquivo {filename}.')
+                    break
+                raise
 
-    # Tratamento do arquivo antes de inserir na base:
-    # Não precisa reset_index, vamos renomear diretamente
-    # socios = socios.reset_index()
-    # del socios['index']
+            if len(socios) == 0:
+                print(f'  Fim do arquivo {filename}.')
+                break
 
-    # Renomear colunas diretamente
-    socios.columns = ['base_cnpj',
-                      'partner_identifier',
-                      'partner_name_or_company_name',
-                      'partner_cpf_cnpj',
-                      'partner_qualification_code',
-                      'partnership_start_date',
-                      'country_code',
-                      'legal_representative_cpf',
-                      'representative_name',
-                      'legal_representative_qualification_code',
-                      'age_range_code']
+            # Tratamento do arquivo antes de inserir na base:
+            print(f'  Processando dados (renomear colunas e converter datas)...')
+            sys.stdout.flush()
+            gc.collect()
 
-    # Converter colunas de data de formato inteiro (YYYYMMDD) para DATE
-    socios['partnership_start_date'] = socios['partnership_start_date'].apply(convert_date_int_to_date)
+            # Renomear colunas diretamente
+            socios.columns = ['base_cnpj',
+                              'partner_identifier',
+                              'partner_name_or_company_name',
+                              'partner_cpf_cnpj',
+                              'partner_qualification_code',
+                              'partnership_start_date',
+                              'country_code',
+                              'legal_representative_cpf',
+                              'representative_name',
+                              'legal_representative_qualification_code',
+                              'age_range_code']
 
-    # Gravar dados no banco:
-    # socios
-    file_size = os.path.getsize(extracted_file_path) if os.path.exists(extracted_file_path) else None
-    to_sql(socios, name='partners', con=engine, if_exists='append', index=False)
-    mark_file_as_processed(filename, 'partners', file_size, len(socios))
-    processed_count_soc += 1
-    print('Arquivo ' + filename + ' inserido com sucesso no banco de dados!')
+            # Converter colunas de data de formato inteiro (YYYYMMDD) para DATE
+            socios['partnership_start_date'] = socios['partnership_start_date'].apply(convert_date_int_to_date)
+
+            # Gravar dados no banco:
+            print(f'  Inserindo {len(socios):,} registros (parte {part_socios + 1}) na tabela partners...')
+            sys.stdout.flush()
+            try:
+                to_sql(socios, name='partners', con=engine, if_exists='append', index=False)
+            except KeyboardInterrupt:
+                print(f'\n\n⚠ Processo interrompido pelo usuário durante inserção do arquivo: {filename}')
+                print('O arquivo não foi marcado como processado e será reprocessado na próxima execução.')
+                print('Progresso salvo até agora:')
+                print(f'  - Arquivos processados: {processed_count_soc}')
+                print(f'  - Arquivos pulados: {skipped_count_soc}')
+                raise
+            
+            part_socios += 1
+            gc.collect()
+
+        # Marcar como processado apenas após todas as partes
+        mark_file_as_processed(filename, 'partners', file_size, None)
+        processed_count_soc += 1
+        print(f'  ✓ Arquivo {filename} inserido com sucesso!')
+        sys.stdout.flush()
+except KeyboardInterrupt:
+    print('\n\n' + '='*60)
+    print('PROCESSO INTERROMPIDO PELO USUÁRIO')
+    print('='*60)
+    print('Progresso salvo:')
+    print(f'  - Arquivos de sócios processados: {processed_count_soc}')
+    print(f'  - Arquivos de sócios pulados: {skipped_count_soc}')
+    print('\nVocê pode executar o script novamente e ele continuará de onde parou.')
+    print('Arquivos já processados serão pulados automaticamente.')
+    print('='*60)
+    sys.exit(0)
 
 try:
     del socios
