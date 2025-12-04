@@ -91,7 +91,19 @@ if not dotenv_path:
     sys.exit(1)
 
 print(f'Carregando variáveis de ambiente de: {dotenv_path}')
-load_dotenv(dotenv_path=dotenv_path)
+load_dotenv(dotenv_path=dotenv_path, override=True)
+
+# Debug: mostrar valores carregados (sem mostrar senha completa)
+print('Variáveis de ambiente carregadas:')
+print(f'  DB_HOST: {getEnv("DB_HOST")}')
+print(f'  DB_PORT: {getEnv("DB_PORT")}')
+print(f'  DB_USER: {getEnv("DB_USER")}')
+print(f'  DB_NAME: {getEnv("DB_NAME")}')
+db_pass = getEnv('DB_PASSWORD')
+if db_pass:
+    print(f'  DB_PASSWORD: {"*" * min(len(db_pass), 10)} (oculto)')
+else:
+    print(f'  DB_PASSWORD: (não definido)')
 
 # Read details from ".env" file:
 output_files = None
@@ -263,6 +275,20 @@ passw=getEnv('DB_PASSWORD')
 host=getEnv('DB_HOST')
 port=getEnv('DB_PORT')
 database=getEnv('DB_NAME')
+
+# Verificar se todas as variáveis foram carregadas
+if not all([user, passw, host, port, database]):
+    print('='*60)
+    print('ERRO: Variáveis de ambiente não definidas!')
+    print('='*60)
+    print('Verifique o arquivo .env e certifique-se de que contém:')
+    print('  DB_HOST=...')
+    print('  DB_PORT=...')
+    print('  DB_USER=...')
+    print('  DB_PASSWORD=...')
+    print('  DB_NAME=...')
+    print(f'\nArquivo .env usado: {dotenv_path}')
+    sys.exit(1)
 
 # Conectar:
 print('='*60)
