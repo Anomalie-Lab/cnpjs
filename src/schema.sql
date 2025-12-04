@@ -1,7 +1,7 @@
 -- Create database "anomalie_db" (Anomalie Data)
 CREATE DATABASE "anomalie_db"
     WITH
-    OWNER = postgres
+    OWNER = anomalie_user
     ENCODING = 'UTF8'
     CONNECTION LIMIT = -1;
 
