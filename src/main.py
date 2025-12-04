@@ -66,26 +66,27 @@ print('='*60)
 print('Iniciando processo ETL - Dados CNPJ Receita Federal')
 print('='*60)
 
-current_path = pathlib.Path().resolve()
-dotenv_path = os.path.join(current_path, '.env')
+# Obter diretório do script (src/) e raiz do projeto
+script_dir = os.path.dirname(os.path.abspath(__file__))  # src/
+project_root = os.path.dirname(script_dir)  # raiz do projeto
 
-# Se não encontrar no diretório atual, procurar no diretório pai
-if not os.path.isfile(dotenv_path):
-    parent_path = current_path.parent
-    dotenv_path = os.path.join(parent_path, '.env')
-    
-# Se ainda não encontrar, procurar em src/.env
-if not os.path.isfile(dotenv_path):
-    src_env_path = os.path.join(current_path, 'src', '.env')
-    if os.path.isfile(src_env_path):
-        dotenv_path = src_env_path
+# Procurar arquivo .env: primeiro na raiz do projeto, depois no diretório do script
+dotenv_path = None
+possible_paths = [
+    os.path.join(project_root, '.env'),  # raiz/.env
+    os.path.join(script_dir, '.env'),   # src/.env
+]
 
-if not os.path.isfile(dotenv_path):
+for path in possible_paths:
+    if os.path.isfile(path):
+        dotenv_path = path
+        break
+
+if not dotenv_path:
     print('Arquivo .env não encontrado!')
     print('Procurando em:')
-    print(f'  - {current_path}/.env')
-    print(f'  - {current_path.parent}/.env')
-    print(f'  - {current_path}/src/.env')
+    for path in possible_paths:
+        print(f'  - {path}')
     print('\nCrie um arquivo .env com as configurações necessárias ou execute o script run.sh')
     sys.exit(1)
 
@@ -97,9 +98,34 @@ output_files = None
 extracted_files = None
 try:
     output_files = getEnv('OUTPUT_FILES_PATH')
-    makedirs(output_files)
-
     extracted_files = getEnv('EXTRACTED_FILES_PATH')
+    
+    # Resolver caminhos relativos para dentro de src/
+    if output_files:
+        if os.path.isabs(output_files):
+            output_files = output_files
+        elif output_files.startswith('src/'):
+            output_files = os.path.join(project_root, output_files)
+        else:
+            output_files = os.path.join(script_dir, output_files)
+    else:
+        output_files = os.path.join(script_dir, 'data', 'downloads')
+    
+    if extracted_files:
+        if os.path.isabs(extracted_files):
+            extracted_files = extracted_files
+        elif extracted_files.startswith('src/'):
+            extracted_files = os.path.join(project_root, extracted_files)
+        else:
+            extracted_files = os.path.join(script_dir, extracted_files)
+    else:
+        extracted_files = os.path.join(script_dir, 'data', 'extracted')
+    
+    # Converter para absolutos
+    output_files = os.path.abspath(output_files)
+    extracted_files = os.path.abspath(extracted_files)
+    
+    makedirs(output_files)
     makedirs(extracted_files)
 
     print('Diretórios definidos:')
@@ -261,7 +287,12 @@ def create_schema():
     '''
     Cria as tabelas do banco de dados conforme o schema.sql
     '''
-    schema_path = os.path.join(current_path, 'schema.sql')
+    # Procurar schema.sql no diretório do script (src/)
+    schema_path = os.path.join(script_dir, 'schema.sql')
+    if not os.path.isfile(schema_path):
+        # Se não encontrar, tentar na raiz do projeto
+        schema_path = os.path.join(project_root, 'src', 'schema.sql')
+    
     if os.path.isfile(schema_path):
         print('Criando schema do banco de dados...')
         with open(schema_path, 'r', encoding='utf-8') as f:
