@@ -298,8 +298,23 @@ print(f'Host: {host}:{port}')
 print(f'Database: {database}')
 print(f'User: {user}')
 try:
-    engine = create_engine('postgresql://'+user+':'+passw+'@'+host+':'+port+'/'+database)
-    conn = psycopg2.connect('dbname='+database+' '+'user='+user+' '+'host='+host+' '+'port='+port+' '+'password='+passw)
+    # Codificar usuário e senha para URL (importante para caracteres especiais)
+    from urllib.parse import quote_plus
+    user_encoded = quote_plus(user)
+    passw_encoded = quote_plus(passw)
+    
+    # Criar URL de conexão com caracteres especiais codificados
+    connection_url = f'postgresql://{user_encoded}:{passw_encoded}@{host}:{port}/{database}'
+    engine = create_engine(connection_url)
+    
+    # Conexão psycopg2 direta (não precisa codificar aqui)
+    conn = psycopg2.connect(
+        dbname=database,
+        user=user,
+        host=host,
+        port=port,
+        password=passw
+    )
     cur = conn.cursor()
     print('✓ Conexão estabelecida com sucesso!')
 except Exception as e:
