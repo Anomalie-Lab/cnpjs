@@ -920,16 +920,22 @@ print(f'  - Já processados (pulados): {skipped_count_est}')
 estabelecimento_insert_end = time.time()
 estabelecimento_Tempo_insert = round((estabelecimento_insert_end - estabelecimento_insert_start))
 print(f'Tempo de execução do processo de estabelecimento: {estabelecimento_Tempo_insert} segundos ({estabelecimento_Tempo_insert//60} minutos)')
+print('✓ Processamento de estabelecimentos FINALIZADO!')
+sys.stdout.flush()
 
 # Atualizar tabela companies com dados de situação cadastral e data de abertura do estabelecimento matriz
+print('')
 print('='*60)
-print('ATUALIZANDO TABELA COMPANIES COM DADOS DO ESTABELECIMENTO MATRIZ')
+print('INICIANDO ATUALIZAÇÃO DA TABELA COMPANIES')
 print('='*60)
-print('Atualizando situação cadastral e data de abertura...')
+print('Atualizando situação cadastral e data de abertura do estabelecimento matriz...')
 print('(Esta operação pode demorar alguns minutos dependendo do volume de dados)')
+print('Executando UPDATE...')
 sys.stdout.flush()
 try:
     update_start = time.time()
+    print(f'  [DEBUG] Iniciando UPDATE em {time.strftime("%H:%M:%S")}')
+    sys.stdout.flush()
     cur.execute('''
         UPDATE companies c
         SET 
@@ -941,36 +947,54 @@ try:
         AND e.matrix_branch_identifier = 1
         AND (c.registration_status IS NULL OR c.registration_status_date IS NULL OR c.activity_start_date IS NULL);
     ''')
+    print(f'  [DEBUG] UPDATE executado, fazendo commit...')
+    sys.stdout.flush()
     updated_rows = cur.rowcount
     conn.commit()
     update_time = round(time.time() - update_start)
     print(f'✓ {updated_rows:,} empresas atualizadas com situação cadastral e data de abertura')
     print(f'  Tempo de atualização: {update_time} segundos ({update_time//60} minutos)')
+    print('✓ Atualização da tabela companies FINALIZADA!')
     sys.stdout.flush()
 except Exception as e:
     print(f'⚠ Erro ao atualizar companies: {e}')
+    import traceback
+    print(f'  Traceback: {traceback.format_exc()}')
     conn.rollback()
     sys.stdout.flush()
 
 #%%
 # Arquivos de socios:
+print('')
+print('='*60)
+print('INICIANDO PROCESSAMENTO DE ARQUIVOS DE SÓCIOS')
+print('='*60)
 socios_insert_start = time.time()
-print('='*60)
-print('PROCESSANDO ARQUIVOS DE SÓCIOS')
-print('='*60)
+print(f'[DEBUG] Iniciando processamento de sócios em {time.strftime("%H:%M:%S")}')
+sys.stdout.flush()
 
 # Verificar se precisa limpar tabela
+print('Verificando arquivos de sócios já processados...')
+sys.stdout.flush()
 arquivos_nao_processados_soc = [f for f in arquivos_socios if not is_file_processed(f, 'partners')]
 if len(arquivos_nao_processados_soc) < len(arquivos_socios):
     print(f'Arquivos já processados: {len(arquivos_socios) - len(arquivos_nao_processados_soc)}/{len(arquivos_socios)}')
+    sys.stdout.flush()
     if len(arquivos_nao_processados_soc) == 0:
         print('Todos os arquivos de sócios já foram processados. Pulando...')
+        sys.stdout.flush()
     else:
+        print('Limpando tabela partners (arquivos novos para processar)...')
+        sys.stdout.flush()
         safe_truncate_table('partners')
 else:
+    print('Limpando tabela partners (primeira execução)...')
+    sys.stdout.flush()
     safe_truncate_table('partners')
 
 print(f'Total de arquivos de sócios para processar: {len(arquivos_socios)}')
+print(f'Total de arquivos não processados: {len(arquivos_nao_processados_soc)}')
+sys.stdout.flush()
 processed_count_soc = 0
 skipped_count_soc = 0
 try:
