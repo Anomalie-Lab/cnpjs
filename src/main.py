@@ -595,7 +595,6 @@ try:
         except:
             pass
 
-        #empresa = pd.DataFrame(columns=[0, 1, 2, 3, 4, 5, 6])
         empresa_dtypes = {0: object, 1: object, 2: 'Int32', 3: 'Int32', 4: object, 5: 'Int32', 6: object}
         extracted_file_path = os.path.join(extracted_files, filename)
         
@@ -605,34 +604,11 @@ try:
             file_size_mb = file_size / (1024 * 1024)
             print(f'  Tamanho do arquivo: {file_size_mb:.2f} MB')
         
-        print(f'  Lendo arquivo CSV... (isso pode levar alguns minutos para arquivos grandes)')
-        try:
-            empresa = pd.read_csv(filepath_or_buffer=extracted_file_path,
-                              sep=';',
-                              #nrows=100,
-                              skiprows=0,
-                              header=None,
-                              dtype=empresa_dtypes,
-                              encoding='latin-1',
-            )
-            print(f'  ✓ Arquivo lido: {len(empresa)} registros encontrados')
-        except KeyboardInterrupt:
-            print(f'\n\n⚠ Processo interrompido pelo usuário durante leitura do arquivo: {filename}')
-            print('O arquivo não foi marcado como processado e será reprocessado na próxima execução.')
-            print('Progresso salvo até agora:')
-            print(f'  - Arquivos processados: {processed_count}')
-            print(f'  - Arquivos pulados: {skipped_count}')
-            raise
-
-        # Tratamento do arquivo antes de inserir na base:
-        # Não precisa reset_index, vamos renomear diretamente
-        # empresa = empresa.reset_index()
-        # del empresa['index']
-
-        # Renomear colunas diretamente
-        empresa.columns = ['base_cnpj', 'company_name', 'legal_nature_code', 'responsible_qualification_code', 'capital', 'company_size_code', 'responsible_federative_entity']
-
-        # Extrair CPF do campo company_name (CPF está concatenado no final do nome)
+        # Processar em chunks para arquivos grandes (evitar OOM)
+        NROWS = 1000000  # 1 milhão de registros por vez
+        part = 0
+        
+        # Funções auxiliares para processamento
         import re
         def extract_cpf_from_name(name_str):
             '''Extrai CPF (11 dígitos) ou CNPJ (14 dígitos) do final do nome'''
@@ -660,31 +636,82 @@ try:
             name_str = re.sub(r'\s+\d{14}$', '', name_str)
             return name_str.strip()
         
-        # Extrair CPF e limpar nome
-        empresa['responsible_cpf'] = empresa['company_name'].apply(extract_cpf_from_name)
-        empresa['company_name'] = empresa['company_name'].apply(clean_company_name)
-
-        # Replace "," por "."
-        empresa['capital'] = empresa['capital'].apply(lambda x: x.replace(',','.'))
-        empresa['capital'] = empresa['capital'].astype(float)
-
-        # Gravar dados no banco:
-        # Empresa
-        print(f'  Inserindo {len(empresa)} registros na tabela companies...')
-        try:
-            to_sql(empresa, name='companies', con=engine, if_exists='append', index=False)
-        except KeyboardInterrupt:
-            print(f'\n\n⚠ Processo interrompido pelo usuário durante inserção do arquivo: {filename}')
-            print('O arquivo não foi marcado como processado e será reprocessado na próxima execução.')
-            print('Progresso salvo até agora:')
-            print(f'  - Arquivos processados: {processed_count}')
-            print(f'  - Arquivos pulados: {skipped_count}')
-            raise
+        while True:
+            if part > 0:
+                print(f'  Lendo parte {part + 1} do arquivo (pulando {NROWS * part:,} linhas)...')
+            else:
+                print(f'  Lendo primeira parte do arquivo...')
+            
+            try:
+                empresa = pd.read_csv(filepath_or_buffer=extracted_file_path,
+                                  sep=';',
+                                  nrows=NROWS,
+                                  skiprows=NROWS * part,
+                                  header=None,
+                                  dtype=empresa_dtypes,
+                                  encoding='latin-1',
+                )
+                print(f'  ✓ Arquivo lido: {len(empresa):,} registros carregados')
+            except KeyboardInterrupt:
+                print(f'\n\n⚠ Processo interrompido pelo usuário durante leitura do arquivo: {filename}')
+                print('O arquivo não foi marcado como processado e será reprocessado na próxima execução.')
+                print('Progresso salvo até agora:')
+                print(f'  - Arquivos processados: {processed_count}')
+                print(f'  - Arquivos pulados: {skipped_count}')
+                raise
+            except Exception as e:
+                print(f'  ⚠ Erro ao ler arquivo: {e}')
+                raise
+            
+            if len(empresa) == 0:
+                break
+            
+            # Renomear colunas
+            empresa.columns = ['base_cnpj', 'company_name', 'legal_nature_code', 'responsible_qualification_code', 'capital', 'company_size_code', 'responsible_federative_entity']
+            
+            # Extrair CPF e limpar nome
+            empresa['responsible_cpf'] = empresa['company_name'].apply(extract_cpf_from_name)
+            empresa['company_name'] = empresa['company_name'].apply(clean_company_name)
+            
+            # Replace "," por "."
+            empresa['capital'] = empresa['capital'].apply(lambda x: x.replace(',','.'))
+            empresa['capital'] = empresa['capital'].astype(float)
+            
+            # Gravar dados no banco
+            if part == 0:
+                print(f'  Inserindo {len(empresa):,} registros (parte {part + 1}) na tabela companies...')
+            else:
+                print(f'  Inserindo {len(empresa):,} registros (parte {part + 1}) na tabela companies...')
+            
+            try:
+                to_sql(empresa, name='companies', con=engine, if_exists='append', index=False)
+            except KeyboardInterrupt:
+                print(f'\n\n⚠ Processo interrompido pelo usuário durante inserção do arquivo: {filename}')
+                print('O arquivo não foi marcado como processado e será reprocessado na próxima execução.')
+                print('Progresso salvo até agora:')
+                print(f'  - Arquivos processados: {processed_count}')
+                print(f'  - Arquivos pulados: {skipped_count}')
+                raise
+            
+            print(f'  ✓ Parte {part + 1} do arquivo {filename} inserida com sucesso!')
+            
+            # Verificar se é a última parte antes de deletar
+            is_last_part = len(empresa) < NROWS
+            
+            # Limpar memória
+            del empresa
+            gc.collect()
+            
+            # Se leu menos que NROWS, é a última parte
+            if is_last_part:
+                break
+            
+            part += 1
         
-        # Marcar como processado
-        mark_file_as_processed(filename, 'companies', file_size, len(empresa))
+        # Marcar como processado após todas as partes
+        mark_file_as_processed(filename, 'companies', file_size, None)
         processed_count += 1
-        print(f'  ✓ Arquivo {filename} inserido com sucesso!')
+        print(f'  ✓ Arquivo {filename} completo inserido com sucesso!')
 except KeyboardInterrupt:
     print('\n\n' + '='*60)
     print('PROCESSO INTERROMPIDO PELO USUÁRIO')
