@@ -418,7 +418,18 @@ def create_schema():
     else:
         print('Arquivo schema.sql não encontrado. Criando tabelas dinamicamente...')
 
-create_schema()
+# Perguntar se deseja criar/atualizar o schema
+print('')
+print('='*60)
+print('CRIAÇÃO/ATUALIZAÇÃO DO SCHEMA')
+print('='*60)
+create_schema_choice = input('Deseja criar/atualizar o schema do banco de dados? (y/n): ').strip().lower()
+
+if create_schema_choice in ['y', 'yes', 's', 'sim']:
+    print('Criando/atualizando schema...')
+    create_schema()
+else:
+    print('✓ Pulando criação do schema. O schema existente será usado.')
 
 #%%
 # Criar tabela de controle de arquivos processados
